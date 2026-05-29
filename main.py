@@ -32,20 +32,20 @@ def get_psx_ticker(symbol: str):
             
         html_content = response.text
         
-        # 1. Extract live current close price
+        # 1. Extract live close price
         price_match = re.search(r'<div class="quote__close">([\s\S]*?)</div>', html_content)
         if not price_match:
             raise HTTPException(status_code=404, detail="Ticker symbol not found")
             
         price = float(price_match.group(1).replace("Rs.", "").replace(",", "").strip())
         
-        # 2. Extract Static Previous Close from the data grid
+        # 2. Extract Static Previous Close (Tag-agnostic extraction regex pattern)
         prev_close = 0.0
-        prev_match = re.search(r'Prev\. Close[\s\S]*?<td class="stats__value">([\s\S]*?)</td>', html_content)
+        prev_match = re.search(r'Prev\. Close[\s\S]*?class="stats__value">([\s\S]*?)</', html_content)
         if prev_match:
             prev_close = float(prev_match.group(1).replace(",", "").strip())
 
-        # 3. Smart Math Formula Calculation (Your Idea!)
+        # 3. Mathematical data processing logic
         change = 0.0
         percent = 0.0
         if prev_close > 0:
@@ -56,8 +56,8 @@ def get_psx_ticker(symbol: str):
         high_52w = 0.0
         low_52w = 0.0
         
-        high_match = re.search(r'52 Week High[\s\S]*?<td class="stats__value">([\s\S]*?)</td>', html_content)
-        low_match = re.search(r'52 Week Low[\s\S]*?<td class="stats__value">([\s\S]*?)</td>', html_content)
+        high_match = re.search(r'52 Week High[\s\S]*?class="stats__value">([\s\S]*?)</', html_content)
+        low_match = re.search(r'52 Week Low[\s\S]*?class="stats__value">([\s\S]*?)</', html_content)
         
         if high_match:
             high_52w = float(high_match.group(1).replace(",", "").strip())
