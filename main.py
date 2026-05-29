@@ -32,39 +32,39 @@ def get_psx_ticker(symbol: str):
             
         html_content = response.text
         
-        # 1. Extract Live Current Price
-        price_match = re.search(r'<div class="quote__close">([\s\S]*?)</div>', html_content)
+        # 1. Extract Live Current Price (Upgraded to handle hidden styling modifications)
+        price_match = re.search(r'quote__close[^>]*?>\s*(?:<[^>]+>)*\s*(?:Rs\.\s*)?([\d,.]+)', html_content, re.IGNORECASE)
         if not price_match:
-            raise HTTPException(status_code=404, detail="Ticker symbol not found")
+            raise HTTPException(status_code=404, detail="Ticker symbol layout mismatch")
             
-        price = float(price_match.group(1).replace("Rs.", "").replace(",", "").strip())
+        price = float(price_match.group(1).replace(",", "").strip())
         
-        # 2. Extract Static Previous Close (Tag-agnostic extraction regex)
+        # 2. Extract Static Previous Close (Armored against extra utility classes and structural shifts)
         prev_close = 0.0
-        prev_match = re.search(r'Prev\. Close[\s\S]*?class="stats__value">([\s\S]*?)</', html_content)
+        prev_match = re.search(r'Prev\.?\s*Close[\s\S]*?stats__value[^>]*?>\s*(?:<[^>]+>)*\s*([\d,.]+)', html_content, re.IGNORECASE)
         if prev_match:
             prev_close = float(prev_match.group(1).replace(",", "").strip())
 
-        # 3. Calculate Bulletproof Intraday Change Metrics
+        # 3. Calculate Real-Time Intraday Shifts via Backend Math Engine
         change = 0.0
         percent = 0.0
         if prev_close > 0:
             change = round(price - prev_close, 2)
             percent = round(change / prev_close, 4)
                 
-        # 4. Extract 52-Week Boundaries
+        # 4. Extract 52-Week Boundaries (Robust Loose Matching)
         high_52w = 0.0
         low_52w = 0.0
         
-        high_match = re.search(r'52 Week High[\s\S]*?class="stats__value">([\s\S]*?)</', html_content)
-        low_match = re.search(r'52 Week Low[\s\S]*?class="stats__value">([\s\S]*?)</', html_content)
+        high_match = re.search(r'52\s*Week\s*High[\s\S]*?stats__value[^>]*?>\s*(?:<[^>]+>)*\s*([\d,.]+)', html_content, re.IGNORECASE)
+        low_match = re.search(r'52\s*Week\s*Low[\s\S]*?stats__value[^>]*?>\s*(?:<[^>]+>)*\s*([\d,.]+)', html_content, re.IGNORECASE)
         
         if high_match:
             high_52w = float(high_match.group(1).replace(",", "").strip())
         if low_match:
             low_52w = float(low_match.group(1).replace(",", "").strip())
             
-        # 5. Calculate 1-Year Performance Change Percentage (Current position relative to 52-Week Low)
+        # 5. Calculate 1-Year Percentage performance footprint
         year_change_percent = 0.0
         if low_52w > 0:
             year_change_percent = round(((price - low_52w) / low_52w), 4)
