@@ -5,7 +5,6 @@ import re
 
 app = FastAPI(title="PSX Live Data Bridge API")
 
-# Enable CORS so Google Sheets can cleanly communicate with your app
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,51 +27,51 @@ def get_psx_ticker(symbol: str):
     
     try:
         response = requests.get(url, headers=headers, timeout=10)
-        
-        if response.status_code == 404:
-            raise HTTPException(status_code=404, detail="Ticker symbol not found on PSX portal")
-        elif response.status_code != 200:
-            raise HTTPException(status_code=502, detail=f"PSX portal returned HTTP status {response.status_code}")
+        if response.status_code != 200:
+            raise HTTPException(status_code=502, detail="PSX portal unreachable")
             
         html_content = response.text
         
-        # Scrape structural elements directly out of official CSS classes
+        # 1. Extract live current close price
         price_match = re.search(r'<div class="quote__close">([\s\S]*?)</div>', html_content)
-        change_match = re.search(r'<div class="quote__change">([\s\S]*?)</div>', html_content)
-        
         if not price_match:
-            raise HTTPException(status_code=404, detail="Unable to extract stock profile page contents")
+            raise HTTPException(status_code=404, detail="Ticker symbol not found")
             
-        # Clean price string formatting
-        raw_price = price_match.group(1).replace("Rs.", "").replace(",", "").strip()
-        price = float(raw_price)
+        price = float(price_match.group(1).replace("Rs.", "").replace(",", "").strip())
         
+        # 2. Extract Static Previous Close from the data grid
+        prev_close = 0.0
+        prev_match = re.search(r'Prev\. Close[\s\S]*?<td class="stats__value">([\s\S]*?)</td>', html_content)
+        if prev_match:
+            prev_close = float(prev_match.group(1).replace(",", "").strip())
+
+        # 3. Smart Math Formula Calculation (Your Idea!)
         change = 0.0
         percent = 0.0
-        
-        if change_match:
-            # Strip internal sub-tags inside change block if present
-            raw_change_text = re.sub(r'<[^>]+>', '', change_match.group(1)).strip()
-            
-            # Parse typical string output: "-2.50 (-0.45%)"
-            if "(" in raw_change_text:
-                parts = raw_change_text.split("(")
-                change = float(parts[0].replace(",", "").strip())
-                raw_percent = parts[1].replace(")", "").replace("%", "").strip()
-                percent = float(raw_percent) / 100.0  # Decimals parse cleanly into Google Sheet percentages
+        if prev_close > 0:
+            change = round(price - prev_close, 2)
+            percent = round(change / prev_close, 4)
                 
+        # 4. Extract 52-Week High and Low boundaries
+        high_52w = 0.0
+        low_52w = 0.0
+        
+        high_match = re.search(r'52 Week High[\s\S]*?<td class="stats__value">([\s\S]*?)</td>', html_content)
+        low_match = re.search(r'52 Week Low[\s\S]*?<td class="stats__value">([\s\S]*?)</td>', html_content)
+        
+        if high_match:
+            high_52w = float(high_match.group(1).replace(",", "").strip())
+        if low_match:
+            low_52w = float(low_match.group(1).replace(",", "").strip())
+            
         return {
             "symbol": clean_symbol,
             "price": price,
             "change": change,
-            "percent": percent
+            "percent": percent,
+            "high52": high_52w,
+            "low52": low_52w
         }
         
-    except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=500, detail=f"Failed connecting to upstream host: {str(e)}")
-    except ValueError:
-        raise HTTPException(status_code=500, detail="Upstream data translation layout parsing error")
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
