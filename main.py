@@ -32,27 +32,27 @@ def get_psx_ticker(symbol: str):
             
         html_content = response.text
         
-        # 1. Extract live close price
+        # 1. Extract Live Current Price
         price_match = re.search(r'<div class="quote__close">([\s\S]*?)</div>', html_content)
         if not price_match:
             raise HTTPException(status_code=404, detail="Ticker symbol not found")
             
         price = float(price_match.group(1).replace("Rs.", "").replace(",", "").strip())
         
-        # 2. Extract Static Previous Close (Tag-agnostic extraction regex pattern)
+        # 2. Extract Static Previous Close (Tag-agnostic extraction regex)
         prev_close = 0.0
         prev_match = re.search(r'Prev\. Close[\s\S]*?class="stats__value">([\s\S]*?)</', html_content)
         if prev_match:
             prev_close = float(prev_match.group(1).replace(",", "").strip())
 
-        # 3. Mathematical data processing logic
+        # 3. Calculate Bulletproof Intraday Change Metrics
         change = 0.0
         percent = 0.0
         if prev_close > 0:
             change = round(price - prev_close, 2)
             percent = round(change / prev_close, 4)
                 
-        # 4. Extract 52-Week High and Low boundaries
+        # 4. Extract 52-Week Boundaries
         high_52w = 0.0
         low_52w = 0.0
         
@@ -64,13 +64,20 @@ def get_psx_ticker(symbol: str):
         if low_match:
             low_52w = float(low_match.group(1).replace(",", "").strip())
             
+        # 5. Calculate 1-Year Performance Change Percentage (Current position relative to 52-Week Low)
+        year_change_percent = 0.0
+        if low_52w > 0:
+            year_change_percent = round(((price - low_52w) / low_52w), 4)
+            
         return {
             "symbol": clean_symbol,
             "price": price,
             "change": change,
             "percent": percent,
+            "prev_close": prev_close,
             "high52": high_52w,
-            "low52": low_52w
+            "low52": low_52w,
+            "year_change_percent": year_change_percent
         }
         
     except Exception as e:
