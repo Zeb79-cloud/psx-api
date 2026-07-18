@@ -5,27 +5,20 @@ app = FastAPI()
 
 @app.get("/price")
 def get_price(symbol: str):
-    # Try the standard .KA suffix
-    psx_symbol = f"{symbol.upper()}.KA"
-    ticker = yf.Ticker(psx_symbol)
+    symbol = symbol.upper()
+    # Try Yahoo Finance
+    ticker = yf.Ticker(f"{symbol}.KA")
     
     try:
-        # Fetch the last 5 days
+        # Fetching data with a longer period to ensure we get *something*
         data = ticker.history(period="5d")
         
-        # If the data is empty, try a fallback (no suffix)
-        if data.empty:
-            ticker = yf.Ticker(symbol.upper())
-            data = ticker.history(period="5d")
-            
-        # Check again if we found anything
-        if data.empty:
-            return {"symbol": symbol.upper(), "price": "N/A", "error": "Symbol not found"}
-            
-        # Extract the last valid closing price
-        current_price = data['Close'].iloc[-1]
-        return {"symbol": symbol.upper(), "price": round(float(current_price), 2)}
+        # If Yahoo returns data, return it
+        if not data.empty:
+            return {"symbol": symbol, "price": round(float(data['Close'].iloc[-1]), 2)}
+        
+        # If Yahoo fails, return a specific message
+        return {"symbol": symbol, "price": "Not Found on YF"}
 
     except Exception:
-        # If any other error occurs, return a clean error instead of 500
-        return {"symbol": symbol.upper(), "price": "N/A", "error": "Server error"}
+        return {"symbol": symbol, "price": "Error"}
