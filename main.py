@@ -6,19 +6,30 @@ app = FastAPI()
 @app.get("/price")
 def get_price(symbol: str):
     symbol = symbol.upper()
-    # Try Yahoo Finance
+    # Adding the .KA suffix for PSX stocks
     ticker = yf.Ticker(f"{symbol}.KA")
     
     try:
-        # Fetching data with a longer period to ensure we get *something*
-        data = ticker.history(period="5d")
+        # Fetch last 2 trading days to compare current price with previous close
+        data = ticker.history(period="2d")
         
-        # If Yahoo returns data, return it
-        if not data.empty:
-            return {"symbol": symbol, "price": round(float(data['Close'].iloc[-1]), 2)}
+        # Check if we have enough data (at least 2 days)
+        if len(data) < 2:
+            return {"symbol": symbol, "price": "N/A", "change_val": "N/A", "change_pct": "N/A"}
+            
+        current_price = data['Close'].iloc[-1]
+        prev_close = data['Close'].iloc[-2]
         
-        # If Yahoo fails, return a specific message
-        return {"symbol": symbol, "price": "Not Found on YF"}
+        # Calculate numerical change and percentage change
+        change_val = current_price - prev_close
+        change_pct = (change_val / prev_close) * 100
+        
+        return {
+            "symbol": symbol, 
+            "price": round(float(current_price), 2),
+            "change_val": round(float(change_val), 2),
+            "change_pct": round(float(change_pct), 2)
+        }
 
     except Exception:
-        return {"symbol": symbol, "price": "Error"}
+        return {"symbol": symbol, "price": "N/A", "change_val": "N/A", "change_pct": "N/A"}
