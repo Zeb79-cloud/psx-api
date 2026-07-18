@@ -1,10 +1,11 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 import requests
-import re
+from bs4 import BeautifulSoup
 
-app = FastAPI(title="PSX Live Data Bridge API")
+app = FastAPI()
 
+# Allows your Google Sheet to communicate with the API securely
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -13,69 +14,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/psx")
-def get_psx_ticker(symbol: str):
-    if not symbol:
-        raise HTTPException(status_code=400, detail="Missing stock symbol parameter")
-        
-    clean_symbol = symbol.upper().strip()
-    url = f"https://dps.psx.com.pk/company/{clean_symbol}"
-    
+@app.get("/")
+def home():
+    return {"status": "PSX API is running smoothly!"}
+
+@app.get("/price")
+def get_price(symbol: str = Query(..., description="The stock ticker symbol, e.g., OGDC")):
+    symbol = symbol.upper().strip()
+    url = f"https://dps.psx.com.pk/company/{symbol}"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
     
     try:
         response = requests.get(url, headers=headers, timeout=10)
         if response.status_code != 200:
-            raise HTTPException(status_code=502, detail="PSX portal unreachable")
+            raise HTTPException(status_code=404, detail=f"Stock symbol '{symbol}' not found on PSX.")
             
-        html_content = response.text
+        soup = BeautifulSoup(response.text, 'html.parser')
         
-        # 1. Extract Live Current Price
-        price_match = re.search(r'<div class="quote__close">([\s\S]*?)</div>', html_content)
-        if not price_match:
-            raise HTTPException(status_code=404, detail="Ticker symbol not found")
+        # Scrapes the live price from the PSX dashboard page layout
+        price_div = soup.find('div', class_='quote__close')
+        if not price_div:
+            # Fallback layout check if PSX modified their CSS classes
+            price_div = soup.find('div', class_='stats_value')
             
-        price = float(price_match.group(1).replace("Rs.", "").replace(",", "").strip())
-        
-        # 2. Extract Static LDCP (Previous Close) using broad cell matching
-        prev_close = 0.0
-        prev_match = re.search(r'LDCP[\s\S]*?<div[^>]*?>\s*([\d,.]+)\s*</div>', html_content, re.IGNORECASE)
-        if prev_match:
-            prev_close = float(prev_match.group(1).replace(",", "").strip())
-
-        # 3. Calculate Bulletproof Intraday Change Metrics inside Python
-        change = 0.0
-        percent = 0.0
-        if prev_close > 0:
-            change = round(price - prev_close, 2)
-            percent = round((change / prev_close), 4) # Returns decimal for Google Sheets % formatting
-                
-        # 4. Extract 52-Week Range using character-set agnostic extraction
-        high_52w = 0.0
-        low_52w = 0.0
-        range_match = re.search(r'52-WEEK RANGE[\s\S]*?<div[^>]*?>\s*([\d,.]+)\s*[^0-9.,]+\s*([\d,.]+)\s*</div>', html_content, re.IGNORECASE)
-        
-        if range_match:
-            low_52w = float(range_match.group(1).replace(",", "").strip())
-            high_52w = float(range_match.group(2).replace(",", "").strip())
+        if price_div:
+            # Clean up text formatting (removes 'Rs.' or whitespace)
+            clean_price = price_div.text.replace("Rs.", "").strip()
+            return {"symbol": symbol, "price": clean_price}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to locate price element on PSX page.")
             
-        # 5. Calculate 1-Year Performance Change Percentage based on 52-Week Floor
-        year_change_percent = 0.0
-        if low_52w > 0:
-            year_change_percent = round(((price - low_52w) / low_52w), 4)
-            
-        return {
-            "symbol": clean_symbol,
-            "price": price,
-            "change": change,
-            "percent": percent,
-            "prev_close": prev_close,
-            "high52": high_52w,
-            "low52": low_52w,
-            "year_change_percent": year_change_percent
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Network error connecting to PSX: {str(e)}")
