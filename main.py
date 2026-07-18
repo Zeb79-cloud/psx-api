@@ -7,18 +7,17 @@ app = FastAPI()
 def get_price(symbol: str):
     try:
         # Yahoo Finance uses .KA for the Karachi Stock Exchange 
-        # So "OGDC" becomes "OGDC.KA"
         psx_symbol = f"{symbol.upper()}.KA"
         
-        # Fetch the stock data
+        # Fetch the last 5 days of data to account for weekends and holidays
         stock = yf.Ticker(psx_symbol)
-        todays_data = stock.history(period="1d")
+        recent_data = stock.history(period="5d")
         
-        if todays_data.empty:
+        if recent_data.empty:
             raise ValueError(f"No trading data found for {symbol}")
             
-        # Get the most recent closing/live price
-        current_price = todays_data['Close'].iloc[-1]
+        # Get the very last available closing price from the dataset
+        current_price = recent_data['Close'].iloc[-1]
 
         # Return the clean data
         return {"symbol": symbol.upper(), "price": round(current_price, 2)}
